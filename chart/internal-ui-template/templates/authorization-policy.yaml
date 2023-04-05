@@ -1,0 +1,25 @@
+{{- if .Values.mesh.enabled }}
+{{- if .Values.mesh.authPolicy }}
+{{- if .Values.mesh.authPolicy.ipBlocks }}
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "applicationName" . }}-ip-policy
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      app: istio-ingressgateway
+  rules:
+  - from:
+    - source:
+        notIpBlocks:
+{{ toYaml .Values.mesh.authPolicy.ipBlocks | trim | indent 8 }}
+    to:
+    - operation:
+        paths:
+          - {{ tpl .Values.mesh.matchPath . }}*
+  action: DENY
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,11 @@
+steps:
+  - task: Cache@2
+    inputs:
+      key: 'npm | "$(Agent.OS)" | package-lock.json | patches/*.patch'
+      restoreKeys: |
+        npm | "$(Agent.OS)"
+      path: $(npm_config_cache)
+    displayName: Cache Dependencies
+  - script: npm ci
+    displayName: Install Dependencies
+    retryCountOnTaskFailure: 3

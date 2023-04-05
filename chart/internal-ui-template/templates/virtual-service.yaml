@@ -1,0 +1,49 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: {{ include "applicationName" . }}-external-virtual-service
+spec:
+  hosts:
+{{ tpl (toYaml .Values.mesh.hosts) . | trim | indent 2 }}
+{{- range $index, $value := .Values.mesh.redirects.authority }}
+  - {{ tpl $value.fromHost $ }}
+{{- end }}
+  gateways:
+{{ tpl (toYaml .Values.mesh.gateways) . | trim | indent 2 }}
+  http:
+{{- range $index, $value := .Values.mesh.redirects.path }}
+  - match:
+    - uri:
+        prefix: {{ $value.fromPath }}
+    redirect:
+      uri: {{ $value.toPath }}
+{{- end }}
+{{- range $index, $value := .Values.mesh.redirects.authority }}
+  - match:
+    - authority:
+        exact: {{ tpl $value.fromHost $ }}
+    redirect:
+      authority: {{ tpl $value.toHost $ }}
+      {{ if $value.toUri }}
+      uri: {{ tpl $value.toUri $ }}
+      {{ end }}
+{{- end }}
+  - name: primary
+    match:
+    - uri:
+        prefix: {{ tpl .Values.mesh.matchPath . }}
+    route:
+    - destination:
+        host: {{ include "applicationName" . }}
+        subset: stable
+        port:
+          number: 80
+      weight: 100
+    - destination:
+        host: {{ include "applicationName" . }}
+        subset: canary
+        port:
+          number: 80
+      weight: 0
+    corsPolicy:
+{{ tpl (toYaml .Values.mesh.corsPolicy) . | indent 6 }}

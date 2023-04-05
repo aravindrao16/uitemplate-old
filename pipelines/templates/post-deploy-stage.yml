@@ -1,0 +1,39 @@
+parameters:
+  - name: stageName
+    type: string
+    default: ""
+  - name: condition
+    type: string
+    default: ""
+  - name: dependsOn
+    type: object
+    default: []
+  - name: applicationName
+    type: string
+  - name: adoEnvironmentName
+    type: string
+    default: ""
+  - name: environmentName
+    type: string
+  - name: isCanary
+    type: boolean
+    default: false
+  - name: k8sNamespace
+    type: string
+    default: "default"
+
+stages:
+  - stage: ${{ coalesce(parameters.stageName, 'promoteCanary') }}
+    ${{ if gt(length(parameters.dependsOn), 0) }}:
+      dependsOn: ${{ parameters.dependsOn }}
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: Promote Canary to Prod
+    jobs:
+      - ${{ if parameters.isCanary }}:
+          - template: cd/jobs/promote-rollout.yaml@pipelineTemplates
+            parameters:
+              rolloutNamespace: ${{ parameters.k8sNamespace }}
+              environmentName: ${{ coalesce(parameters.adoEnvironmentName, parameters.environmentName) }}
+              k8sServiceConnection: AKS-${{ lower(parameters.environmentName) }}-dw-apps
+              rolloutName: ${{ parameters.applicationName }}

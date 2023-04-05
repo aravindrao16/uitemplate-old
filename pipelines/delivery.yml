@@ -1,0 +1,153 @@
+# PR triggers cannot be configured via YAML.
+# So this only affects push/merge triggers on included branches.
+trigger:
+  branches:
+    include:
+      - "develop"
+      - "main"
+      - "release/*"
+      - "hotfix/*"
+  tags:
+    include:
+      - "v*"
+
+pool: driveway-pipeline-agents
+
+resources:
+  containers:
+    - container: docker
+      image: drivewaydevcontainerregistry.azurecr.io/devops/docker:latest
+      endpoint: ACR-pipeline-images
+      options: -v /var/run/docker.sock:/var/run/docker.sock
+    - container: helm
+      image: drivewaydevcontainerregistry.azurecr.io/devops/helm:latest
+      endpoint: ACR-pipeline-images
+    - container: node16
+      image: drivewaydevcontainerregistry.azurecr.io/devops/node-16:latest
+      endpoint: ACR-pipeline-images
+    - container: gitversion
+      image: drivewaydevcontainerregistry.azurecr.io/devops/dotnet/gitversion:latest
+      endpoint: ACR-pipeline-images
+    - container: utility
+      image: drivewaydevcontainerregistry.azurecr.io/devops/utility:latest
+      endpoint: ACR-pipeline-images
+
+  repositories:
+    - repository: pipelineTemplates
+      type: git
+      ref: main
+      name: Roam/pipeline-templates
+
+variables:
+  - template: variables/global.yaml@pipelineTemplates
+  # - group: variable-group-name
+  #
+  # Drop-in 'global' variable groups here
+  #
+  - name: APPLICATION_NAME
+    value: internal-ui-template
+  - name: APPLICATION_NAMESPACE
+    value: internal-templates
+
+stages:
+  # ALL FLOWS
+  # Constrained upstream by the 'triggers' above.
+  #
+  - stage: buildAndTest
+    displayName: Run Tests & Build Artifacts
+    # variables:
+    #
+    # Drop-in build-time variable groups here
+    #
+    condition: or(
+      ${{ variables.isDevelopBranchCondition }},
+      ${{ variables.isMasterBranchCondition }},
+      ${{ variables.isReleaseBranchCondition }},
+      ${{ variables.isHotfixBranchCondition }}
+      )
+    jobs:
+      - template: templates/ci-jobs.yml
+        parameters:
+          applicationName: ${{ variables.APPLICATION_NAME }}
+
+  # DEVELOP FLOWS
+  # This continuously deploys both PRs and develop to Dev.
+  #
+  - stage: deployToDev
+    displayName: Deploy to Dev
+    # variables:
+    #
+    # Drop-in 'dev' variable groups here
+    #
+    dependsOn:
+      - buildAndTest
+    condition: ${{ variables.isDevelopBranchCondition }}
+    jobs:
+      - template: templates/cd-jobs.yml
+        parameters:
+          applicationName: ${{ variables.APPLICATION_NAME }}
+          k8sNamespace: ${{ variables.APPLICATION_NAMESPACE }}
+
+  # RELEASE/HOTFIX BRANCH FLOWS
+  #
+  - stage: deployToUat
+    displayName: Deploy to UAT
+    # variables:
+    #
+    # Drop-in 'uat' variable groups here
+    #
+    dependsOn:
+      - buildAndTest
+    condition: or(${{ variables.isReleaseBranchCondition }}, ${{ variables.isHotfixBranchCondition }})
+    jobs:
+      - template: templates/cd-jobs.yml
+        parameters:
+          applicationName: ${{ variables.APPLICATION_NAME }}
+          k8sNamespace: ${{ variables.APPLICATION_NAMESPACE }}
+          environmentName: uat
+
+  # MAIN FLOWS
+  # The result of any PR merged to main will be a tag.
+  #
+  - template: ci/stages/publish-version.yaml@pipelineTemplates
+    parameters:
+      dependsOn:
+        - buildAndTest
+      condition: ${{ variables.isMasterBranchCondition }}
+
+  # TAG FLOWS
+  # The result of the creation of any tag with v prefixed will be a deploy to prod.
+  #
+  - stage: deployToProd
+    displayName: Deploy to Canary
+    # variables:
+    #
+    # Drop-in 'prod' variable groups here
+    #
+    dependsOn: []
+    condition: ${{ variables.isReleaseTagCondition }}
+    jobs:
+      - template: templates/cd-jobs.yml
+        parameters:
+          applicationName: ${{ variables.APPLICATION_NAME }}
+          k8sNamespace: ${{ variables.APPLICATION_NAMESPACE }}
+          environmentName: prod
+          isCanary: true
+          # This will instruct Argo Rollouts to wait for prompt.
+          # This will also render a Promote Rollout job in the post deploy stage.
+
+  - template: templates/post-deploy-stage.yml
+    parameters:
+      dependsOn:
+        - deployToProd
+      condition: ${{ variables.isReleaseTagCondition }}
+      isCanary: true
+      applicationName: ${{ variables.APPLICATION_NAME }}
+      k8sNamespace: ${{ variables.APPLICATION_NAMESPACE }}
+      environmentName: prod
+      # This environmentName parameter determines multiple things,
+      # including which ADO Environment to select and therefore
+      # which gates will be required. Upstream coupling in pipeline templates.
+      #
+      # adoEnvironmentName: prodFE
+      # Use this parameter to override the ADO Environment alone.

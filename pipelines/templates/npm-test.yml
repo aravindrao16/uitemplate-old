@@ -1,0 +1,44 @@
+parameters:
+  - name: applicationName
+
+jobs:
+  - job:
+    displayName: Run Unit Tests
+    container: node16
+    variables:
+      disable.coverage.autogenerate: "true"
+    steps:
+      - checkout: self
+        retryCountOnTaskFailure: 3
+        fetchDepth: 1
+        clean: false
+
+      - template: npm-install.yml
+
+      - script: |
+          set +x
+          npm run test:ci
+        displayName: "NPM Run Test:ci - ${{ parameters.applicationName }}"
+
+      - task: PublishTestResults@2
+        inputs:
+          testRunner: JUnit
+          failTaskOnFailedTests: true
+          testResultsFiles: $(System.DefaultWorkingDirectory)/junit.xml
+        condition: succeededOrFailed()
+        displayName: Publish Test Results
+        retryCountOnTaskFailure: 3
+
+      - task: reportgenerator@5
+        displayName: ReportGenerator
+        inputs:
+          reports: "$(Build.SourcesDirectory)/jest-coverage/cobertura-coverage.xml"
+          targetdir: "$(Build.SourcesDirectory)/CodeCoverage"
+          reporttypes: "HtmlInline_AzurePipelines;Cobertura"
+
+      - task: PublishHtmlReport@1
+        condition: always()
+        displayName: Publish Code Coverage
+        inputs:
+          tabName: 'Code-Coverage'
+          reportDir: '$(Build.SourcesDirectory)/CodeCoverage/index.htm'

@@ -1,0 +1,107 @@
+parameters:
+  - name: applicationName
+    type: string
+  - name: adoEnvironmentName
+    type: string
+    default: ""
+  - name: environmentName
+    type: string
+    default: dev
+  - name: vaultNames
+    type: object
+    default: []
+  - name: isCanary
+    type: boolean
+    default: false
+  - name: k8sNamespace
+    type: string
+    default: "default"
+  - name: autoSemVer
+    type: boolean
+    default: true
+  - name: isPullRequest
+    type: boolean
+    default: false
+
+jobs:
+  - ${{ if parameters.autoSemVer }}:
+      - template: ci/jobs/determine-version.yaml@pipelineTemplates
+
+  - ${{ if not(parameters.isPullRequest )}}:
+      - template: cd/jobs/helm-rollout.yaml@pipelineTemplates
+        parameters:
+          condition: not(and(eq(variables['System.PullRequest.TargetBranch'], 'refs/heads/develop'), eq(variables['Build.Reason'], 'PullRequest')))
+          ${{ if parameters.autoSemVer }}:
+            dependsOn:
+              - CalculateVersion
+            variables:
+              GIT_SEM_VER: $[ dependencies.CalculateVersion.outputs['set_semver_output.GITVERSION_SEMVER'] ]
+          environment: ${{ parameters.environmentName }}
+          k8sServiceConnection: AKS-${{ lower(parameters.environmentName) }}-dw-apps
+          releaseName: ${{ parameters.applicationName }}
+          namespace: ${{ parameters.k8sNamespace }}
+          chartName: chart/${{ parameters.applicationName }}
+          chartValuesFile: chart/${{ parameters.applicationName }}/values.yaml
+          vaultServiceConnection: ARM-Driveway-${{ lower(parameters.environmentName) }}
+          ${{ if parameters.vaultNames }}:
+            vaultNames: ${{ parameters.vaultNames }}
+          ${{ if parameters.autoSemVer }}:
+            helmOverrideValues:
+              "--set deployment.image.tag=\"$(GIT_SEM_VER)\" \
+              --set mesh.canary.requiresApproval=${{ parameters.isCanary }}"
+          ${{ if not(parameters.autoSemVer) }}:
+            helmOverrideValues:
+              "--set deployment.image.tag=\"$(SHORT_BUILD_NUMBER)\" \
+              --set mesh.canary.requiresApproval=${{ parameters.isCanary }}"
+          helmArguments: "--atomic \
+            -f chart/${{ parameters.applicationName }}/values-${{ parameters.environmentName }}.yaml"
+          preDeploySteps:
+            - template: /cd/tasks/modify-chart-yaml.yaml@pipelineTemplates
+              parameters:
+                chartPath: chart/internal-ui-template
+                ${{ if parameters.autoSemVer }}:
+                  chartVersion: $(GIT_SEM_VER)
+                ${{ if not(parameters.autoSemVer) }}:
+                  chartVersion: "0.0.0"
+
+  - ${{ if parameters.isPullRequest }}:
+      - template: cd/jobs/helm-rollout.yaml@pipelineTemplates
+        parameters:
+          condition: ${{ variables.pullRequestToDevelopCondition }}
+          ${{ if parameters.autoSemVer }}:
+            dependsOn:
+              - CalculateVersion
+            variables:
+              GIT_SEM_VER: $[ dependencies.CalculateVersion.outputs['set_semver_output.GITVERSION_SEMVER'] ]
+          environment: ${{ parameters.environmentName }}
+          k8sServiceConnection: AKS-${{ lower(parameters.environmentName) }}-dw-apps
+          releaseName: ${{ parameters.applicationName }}-pr-$(System.PullRequest.PullRequestId)
+          namespace: ${{ parameters.k8sNamespace }}
+          chartName: chart/${{ parameters.applicationName }}
+          chartValuesFile: chart/${{ parameters.applicationName }}/values.yaml
+          vaultServiceConnection: ARM-Driveway-${{ lower(parameters.environmentName) }}
+          ${{ if parameters.vaultNames }}:
+            vaultNames: ${{ parameters.vaultNames }}
+          ${{ if parameters.autoSemVer }}:
+            helmOverrideValues:
+              "--set baseURL=\"pr-$(System.PullRequest.PullRequestId).${{ parameters.environmentName }}.driveway.cloud\" \
+              --set reviewBuild.reviewName=pr-$(System.PullRequest.PullRequestId) \
+              --set deployment.image.tag=\"$(GIT_SEM_VER)\" \
+              --set mesh.canary.requiresApproval=false"
+          ${{ if not(parameters.autoSemVer) }}:
+            helmOverrideValues:
+              "--set baseURL=\"pr-$(System.PullRequest.PullRequestId).${{ parameters.environmentName }}.driveway.cloud\" \
+              --set reviewBuild.reviewName=pr-$(System.PullRequest.PullRequestId) \
+              --set deployment.image.tag=\"$(SHORT_BUILD_NUMBER)\" \
+              --set mesh.canary.requiresApproval=false"
+          helmArguments: "--atomic \
+            -f chart/${{ parameters.applicationName }}/values-${{ parameters.environmentName }}.yaml \
+            -f chart/${{ parameters.applicationName }}/values-${{ parameters.environmentName }}-pr.yaml"
+          preDeploySteps:
+            - template: /cd/tasks/modify-chart-yaml.yaml@pipelineTemplates
+              parameters:
+                chartPath: chart/internal-ui-template
+                ${{ if parameters.autoSemVer }}:
+                  chartVersion: $(GIT_SEM_VER)
+                ${{ if not(parameters.autoSemVer) }}:
+                  chartVersion: "0.0.0"

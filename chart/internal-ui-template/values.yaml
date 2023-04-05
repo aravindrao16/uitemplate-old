@@ -1,0 +1,89 @@
+application:
+  name: internal-ui-template
+  version: v1
+
+## These will generally be set in values-dev.yaml and etc
+config:
+  REACT_APP_ENV: "{{ .Values.environment }}"
+
+## These will generally be sent in via pipeline vars or secret files
+# secrets:
+#   wow: cool
+
+dataDog:
+  profilingEnabled: "false"
+  logsInjectionEnabled: "true"
+  runtimeMetricsEnabled: "true"
+
+autoScaling:
+  enabled: false
+  minReplicas: 3
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+deployment:
+  replicas: 1
+  image:
+    name: internal-ui-template
+    repository: drivewaydevcontainerregistry.azurecr.io
+    tag: ""
+  containerPort: 8080
+  alwaysRollPods: true
+  agentPool: frontend # frontend/backend/cron/pullrequests
+  resources:
+    requests:
+      cpu: 500m
+      memory: 250Mi
+    limits:
+      cpu: 500m
+      memory: 250Mi
+
+reviewBuild:
+  enabled: false
+  # see values-dev-pr for overrides for PR builds and epic deploys
+  reviewName: ""
+
+mesh:
+  canary:
+    requiresApproval: false
+    alternateVirtualService:
+      enabled: false
+      redirects:
+        authority: []
+      #   - fromHost: "{{- .Values.envName }}.driveway.cloud"
+      #     toHost: "www.{{- .Values.envName }}.driveway.cloud"
+      hosts: []
+      # - "www.{{- .Values.envName }}.driveway.cloud"
+      gateways:
+        - default/cluster-shared-gateway
+      corsPolicy:
+        {}
+        # allowOrigins:
+        #   - exact: https://{{ tpl .Values.auth0Domain . }}
+  proxies:
+    enabled: false
+    path: []
+  redirects:
+    path: []
+  hosts:
+    - "{{ .Values.baseURL }}"
+  matchPath: "/"
+  gateways:
+    - default/cluster-shared-gateway
+  corsPolicy:
+    {}
+    # allowOrigins:
+    #   - exact: https://{{ tpl .Values.auth0Domain . }}
+
+  # authPolicy:
+  #   ipBlocks:
+  #   - "23.99.140.136/32"
+  # externalEndpoints:
+  # - name: datadog-api
+  #   namespace: default
+  #   hosts:
+  #   - api.datadoghq.com
+  #   ports:
+  #   - name: HTTPS
+  #     number: 443
+  #     protocol: HTTPS

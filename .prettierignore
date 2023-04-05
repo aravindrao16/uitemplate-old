@@ -1,0 +1,7 @@
+public/
+build/
+.next
+node_modules/
+scripts/content/
+.storybook/preview-head.html
+code-generator/

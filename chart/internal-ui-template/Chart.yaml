@@ -1,0 +1,4 @@
+apiVersion: v2
+name: internal-ui-template
+description: A local chart for Internal-UI-Template.
+type: application

@@ -1,0 +1,81 @@
+# PR triggers cannot be configured via YAML.
+# So this only affects push/merge triggers on included branches.
+trigger: none
+
+pool: driveway-pipeline-agents
+
+resources:
+  containers:
+    - container: docker
+      image: drivewaydevcontainerregistry.azurecr.io/devops/docker:latest
+      endpoint: ACR-pipeline-images
+      options: -v /var/run/docker.sock:/var/run/docker.sock
+    - container: helm
+      image: drivewaydevcontainerregistry.azurecr.io/devops/helm:latest
+      endpoint: ACR-pipeline-images
+    - container: node16
+      image: drivewaydevcontainerregistry.azurecr.io/devops/node-16:latest
+      endpoint: ACR-pipeline-images
+    - container: gitversion
+      image: drivewaydevcontainerregistry.azurecr.io/devops/dotnet/gitversion:latest
+      endpoint: ACR-pipeline-images
+    - container: utility
+      image: drivewaydevcontainerregistry.azurecr.io/devops/utility:latest
+      endpoint: ACR-pipeline-images
+
+  repositories:
+    - repository: pipelineTemplates
+      type: git
+      ref: main
+      name: Roam/pipeline-templates
+
+variables:
+  - name: SOURCE_BRANCH_NO_REF
+    value: $[ replace(variables['System.PullRequest.SourceBranch'], 'refs/heads/', '') ]
+  - name: SOURCE_BRANCH_NO_SLASH
+    value: $[ replace(variables.SOURCE_BRANCH_NO_REF, '/', '-') ]
+  - template: variables/global.yaml@pipelineTemplates
+  #
+  # Drop-in 'global' variable groups here
+  #
+  - name: APPLICATION_NAME
+    value: internal-ui-template
+  - name: APPLICATION_NAMESPACE
+    value: internal-templates
+
+name: "PullRequest $(System.PullRequest.PullRequestId).$(Rev:r) $(SOURCE_BRANCH_NO_SLASH)"
+
+stages:
+  # ALL PR FLOWS
+  #
+  - stage: buildAndTest
+    displayName: Run Tests & Build Artifacts
+    condition: or(${{ variables.pullRequestToDevelopCondition }}, ${{ variables.pullRequestToMasterCondition }})
+    # variables:
+    #
+    # Drop-in build-time variable groups here
+    #
+    jobs:
+      - template: templates/ci-jobs.yml
+        parameters:
+          applicationName: ${{ variables.APPLICATION_NAME }}
+          autoSemVer: false
+
+  # PR TO DEVELOP FLOWS
+  # This continuously deploys PRs to dev.
+  #
+  - stage: deployToDev
+    displayName: Deploy to Dev
+    #
+    # Drop-in 'dev' variable groups here
+    #
+    dependsOn:
+      - buildAndTest
+    condition: ${{ variables.pullRequestToDevelopCondition }}
+    jobs:
+      - template: templates/cd-jobs.yml
+        parameters:
+          applicationName: ${{ variables.APPLICATION_NAME }}
+          k8sNamespace: ${{ variables.APPLICATION_NAMESPACE }}
+          autoSemVer: false
+          isPullRequest: true

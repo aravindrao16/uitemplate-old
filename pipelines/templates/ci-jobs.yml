@@ -1,0 +1,58 @@
+parameters:
+  - name: applicationName
+    type: string
+  - name: environmentName
+    type: string
+    default: dev
+  - name: autoSemVer
+    type: boolean
+    default: true
+
+jobs:
+  - ${{ if parameters.autoSemVer }}:
+      - template: ci/jobs/determine-version.yaml@pipelineTemplates
+
+  - template: npm-test.yml
+    parameters:
+      applicationName: ${{ parameters.applicationName }}
+
+  - job:
+    displayName: Run Linters
+    container: node16
+    steps:
+      - template: npm-lint.yml
+
+  - template: npm-build.yml
+    parameters:
+      ${{ if parameters.autoSemVer }}:
+        dependsOn:
+          - CalculateVersion
+        variables:
+          GIT_SEM_VER: $[ dependencies.CalculateVersion.outputs['set_semver_output.GITVERSION_SEMVER'] ]
+        version: $(GIT_SEM_VER)
+      ${{ if not(parameters.autoSemVer) }}:
+        version: $(SHORT_BUILD_NUMBER)
+      applicationName: ${{ parameters.applicationName }}
+
+  - template: ci/jobs/docker-build-push-v3.yaml@pipelineTemplates
+    parameters:
+      imageName: ${{ parameters.applicationName }}
+      ${{ if parameters.autoSemVer }}:
+        dependsOn:
+          - npmBuild
+          - CalculateVersion
+        variables:
+          GIT_SEM_VER: $[ dependencies.CalculateVersion.outputs['set_semver_output.GITVERSION_SEMVER'] ]
+        tags: |
+          $(GIT_SEM_VER)
+      ${{ if not(parameters.autoSemVer) }}:
+        dependsOn:
+          - npmBuild
+        tags: |
+          $(SHORT_BUILD_NUMBER)
+      registryServiceConnections:
+        - ACR-dev-container
+        - ACR-uat-container
+        - ACR-prod-container
+      artifactsToStage:
+        - builtApp$(Build.BuildId)

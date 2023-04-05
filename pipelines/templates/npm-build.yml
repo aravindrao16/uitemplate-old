@@ -1,0 +1,85 @@
+parameters:
+  - name: applicationName
+    type: string
+  - name: envFile
+    type: string
+    default: .env.development
+  - name: datadogKey
+    type: string
+    default: ""
+  - name: condition
+    type: string
+    default: ""
+  - name: dependsOn
+    type: object
+    default: []
+  - name: variables
+    type: object
+    default: []
+  - name: version
+    type: string
+
+jobs:
+  - job: npmBuild
+    displayName: Build Artifacts
+    container: node16
+    ${{ if gt(length(parameters.dependsOn), 0) }}:
+      dependsOn: ${{ parameters.dependsOn }}
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    variables:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1 # Skip downloading during npm install
+      ${{ if gt(length(parameters.variables), 0) }}: ${{ parameters.variables }}
+    steps:
+      - checkout: self
+        retryCountOnTaskFailure: 3
+        fetchDepth: 1
+        clean: false
+      - template: npm-install.yml
+      - script: mv ${{ parameters.envFile }} .env.local
+        displayName: Set Environment
+      - script: |
+          npm version ${{ parameters.version }} \
+            --git-tag-version false \
+            --allow-same-version true
+        displayName: Inject Version into Package
+      - task: Cache@2
+        inputs:
+          key: "next | $(Agent.OS) | package-lock.json"
+          restoreKeys: |
+            next | "$(Agent.OS)"
+          path: "$(System.DefaultWorkingDirectory)/.next/cache"
+        displayName: Cache Build
+      - script: npm run build
+        displayName: Build
+      - script: |
+          set +x
+          if [[ (${{ parameters.environment }} != "dev") ]]; then
+            export DATADOG_API_KEY=${{parameters.datadogKey}}
+            export hostname=${{ parameters.hostname }}
+
+            npm run upload-sourcemaps
+            if [[ ${{ parameters.environment }} == "prod" ]]; then
+              # once uploaded, remove the maps so they are not available in production
+              rm -f .next/static/**/*.js.map
+            fi
+          fi
+        displayName: Publish Sourcemaps
+      - script: |
+          ls -la
+          cp -r next.config.js package.json public $(Build.ArtifactStagingDirectory)
+          mkdir -p $(Build.ArtifactStagingDirectory)/.next
+          # See https://github.com/vercel/next.js/issues/40735
+          cp ./node_modules/next/dist/server/next.js .next/standalone/node_modules/next/dist/server/
+          cp src/server-init.js .next/standalone/
+          cp -r .next/static .next/standalone $(Build.ArtifactStagingDirectory)/.next/
+          ls -la $(Build.ArtifactStagingDirectory)
+        displayName: Copy Artifacts to Staging Directory
+      - task: PublishPipelineArtifact@1
+        retryCountOnTaskFailure: 3
+        displayName: Publish Artifacts
+        inputs:
+          targetPath: $(Build.ArtifactStagingDirectory)
+          artifactName: builtApp$(Build.BuildId)
+          parallel: true
+          parallelCount: 16

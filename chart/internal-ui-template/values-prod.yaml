@@ -1,0 +1,21 @@
+environment: prod
+
+baseURL: internal-ui-template.driveway.com
+
+deployment:
+  image:
+    repository: drivewayprodcontainerregistry.azurecr.io
+
+config:
+  REACT_APP_AUTH_CLIENT_ID: "6cb0ec3f-c07f-4815-9294-d340cd3c4f0c"
+  REACT_APP_AUTH_AUTHORITY_ID: "f1a215ee-6910-4213-aec6-ac36fdca6048"
+  REACT_APP_BASE_URL: "{{ .Values.baseURL }}"
+  REACT_APP_EXAMPLE_ENDPOINT_API_PATH: "https://internal-api-template.driveway.com"
+
+mesh:
+  canary:
+    requiresApproval: true
+    alternateVirtualService:
+      enabled: true
+      hosts:
+        - "canary.{{ .Values.baseURL }}"

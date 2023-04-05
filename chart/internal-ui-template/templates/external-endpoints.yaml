@@ -1,0 +1,14 @@
+{{- range $index, $value := .Values.mesh.externalEndpoints -}}
+---
+kind: ServiceEntry
+apiVersion: networking.istio.io/v1alpha3
+metadata:
+  name: {{ $.Values.application.name $ }}-ext-svc-{{ $value.name }}
+  namespace: {{ $value.namespace }}
+spec:
+  hosts:
+{{ toYaml $value.hosts | trim | indent 2 }}
+  ports:
+{{ toYaml $value.ports | trim | indent 2 }}
+  location: MESH_EXTERNAL
+{{- end -}}

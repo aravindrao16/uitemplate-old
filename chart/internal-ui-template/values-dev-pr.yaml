@@ -1,0 +1,10 @@
+environment: dev
+
+deployment:
+  agentPool: pullrequests
+
+# baseURL: INJECT FROM PIPELINE
+
+reviewBuild:
+  enabled: true
+  # reviewName: INJECT FROM PIPELINE

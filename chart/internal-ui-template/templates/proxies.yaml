@@ -1,0 +1,47 @@
+{{- if .Values.mesh.proxies.enabled }}
+{{- range $index, $value := .Values.mesh.proxies.path }}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: {{ include "applicationName" $ }}-{{ $value.name }}-ext-vsvc
+spec:
+  hosts:
+{{ tpl (toYaml $value.fromHosts) $ | trim | indent 2 }}
+  gateways:
+{{ tpl (toYaml $.Values.mesh.gateways) $ | trim | indent 2 }}
+  http:
+  - match:
+    - uri:
+        prefix: {{ $value.prefix }}
+    rewrite:
+      authority: {{ $value.toHost }}
+    route:
+    - destination:
+        host: {{ $value.toHost }}
+---
+kind: ServiceEntry
+apiVersion: networking.istio.io/v1alpha3
+metadata:
+  name: {{ include "applicationName" $ }}-{{ $value.name }}-ext-svc-entry
+spec:
+  hosts:
+  - {{ $value.toHost }}
+  ports:
+  - name: HTTPS
+    number: 443
+    protocol: TLS
+  location: MESH_EXTERNAL
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: {{ include "applicationName" $ }}-{{ $value.name }}-ext-dest-rule
+spec:
+  host: {{ $value.toHost }}
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+{{- end}}
+{{- end}}

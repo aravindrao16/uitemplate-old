@@ -1,0 +1,13 @@
+parameters:
+  - name: lintResultsPath
+    type: string
+    default: "reports/eslint-report.txt"
+
+steps:
+  - checkout: self
+    retryCountOnTaskFailure: 3
+    fetchDepth: 1
+    clean: false
+  - template: npm-install.yml
+  - script: npm run lint
+    displayName: NPM Run Lint
